@@ -23,6 +23,6 @@ namespace ASEDUPH_V2_API.Models
         public string Estado { get; set; } = "Activo";
 
         public ICollection<SolicitudBeca>? SolicitudesBeca { get; set; }
-        /*public ICollection<SeguimientoAcademico>? SeguimientosAcademicos { get; set; }*/
+        public ICollection<SeguimientoAcademico>? SeguimientosAcademicos { get; set; }
     }
 }

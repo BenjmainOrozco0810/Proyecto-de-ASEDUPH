@@ -33,7 +33,7 @@ namespace ASEDUPH_V2_API.Models
 
         public ICollection<Encargado>? Encargados { get; set; }
         public ICollection<SolicitudBeca>? SolicitudesBeca { get; set; }
-        /*public ICollection<Beca>? Becas { get; set; }
-        public ICollection<SeguimientoAcademico>? SeguimientosAcademicos { get; set; }*/
+        public ICollection<Beca>? Becas { get; set; }
+        public ICollection<SeguimientoAcademico>? SeguimientosAcademicos { get; set; }
     }
 }
