@@ -24,6 +24,14 @@ namespace ASEDUPH_V2_API.Controllers
             _configuration = configuration;
         }
 
+        // GET: api/Auth/hash/{password}
+        // TEMPORAL - Solo para pruebas, eliminar en producción
+        [HttpGet("hash/{password}")]
+        public IActionResult GenerarHash(string password)
+        {
+            var hash = AuthController.HashPassword(password);
+            return Ok(new { password, hash });
+        }
         // POST: api/Auth/login
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)

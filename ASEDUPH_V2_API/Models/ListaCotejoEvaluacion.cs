@@ -5,6 +5,7 @@ namespace ASEDUPH_V2_API.Models
 {
     public class ListaCotejoEvaluacion
     {
+        [Key]
         public int ListaCotejoId { get; set; }
 
         [Required]
