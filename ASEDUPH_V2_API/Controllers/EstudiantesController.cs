@@ -1,5 +1,6 @@
 ﻿using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +27,28 @@ namespace ASEDUPH_V2_API.Controllers
                 .ToListAsync();
 
             return Ok(estudiantes);
+        }
+        // POST: api/Estudiantes/publico
+        [HttpPost("publico")]
+        [AllowAnonymous]
+        public async Task<ActionResult<Estudiante>> PostEstudiantePublico(Estudiante estudiante)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            estudiante.Estado = "Activo";
+            estudiante.FechaRegistro = DateTime.Now;
+
+            _context.Estudiantes.Add(estudiante);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                mensaje = "Estudiante registrado correctamente.",
+                estudianteId = estudiante.EstudianteId
+            });
         }
 
         // GET: api/Estudiantes/5

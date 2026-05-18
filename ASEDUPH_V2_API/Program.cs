@@ -48,6 +48,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+// ── CORS ─────────────────────────────────────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins(
+                "https://localhost:5269",
+                "http://localhost:5269"
+              )
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
 // ── Controladores ─────────────────────────────────────────────────
 builder.Services.AddControllers()
@@ -108,6 +121,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("PermitirFrontend");
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseAuthentication();
 app.UseAuthorization();

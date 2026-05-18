@@ -1,7 +1,9 @@
 ﻿using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ASEDUPH_V2_API.Controllers
 {
@@ -123,6 +125,41 @@ namespace ASEDUPH_V2_API.Controllers
                 new { id = solicitud.SolicitudBecaId },
                 solicitud
             );
+        }
+        // POST: api/SolicitudesBeca/publica
+        // Endpoint público - no requiere autenticación
+        [HttpPost("publica")]
+        [AllowAnonymous]
+        public async Task<ActionResult<SolicitudBeca>> PostSolicitudPublica(SolicitudBeca solicitud)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Verificar o crear estudiante
+            var existeEstudiante = await _context.Estudiantes
+                .AnyAsync(e => e.EstudianteId == solicitud.EstudianteId && e.Estado == "Activo");
+
+            if (!existeEstudiante)
+            {
+                return BadRequest(new
+                {
+                    mensaje = "El estudiante indicado no existe o está inactivo."
+                });
+            }
+
+            solicitud.EstadoSolicitud = "Pendiente";
+            solicitud.FechaSolicitud = DateTime.Now;
+
+            _context.SolicitudesBeca.Add(solicitud);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                mensaje = "Solicitud enviada correctamente. Nos pondremos en contacto con usted pronto.",
+                solicitudId = solicitud.SolicitudBecaId
+            });
         }
 
         // PUT: api/SolicitudesBeca/5
