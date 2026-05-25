@@ -1,21 +1,24 @@
-﻿using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using ASEDUPH_V2_API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 
 namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class EstudiantesController : ControllerBase
     {
         private readonly AseduphDbContext _context;
+        private readonly AuditoriaService _auditoria;
 
-        public EstudiantesController(AseduphDbContext context)
+        public EstudiantesController(AseduphDbContext context, AuditoriaService auditoria)
         {
             _context = context;
+            _auditoria = auditoria;
         }
 
         // GET: api/Estudiantes
@@ -29,45 +32,26 @@ namespace ASEDUPH_V2_API.Controllers
 
             return Ok(estudiantes);
         }
-        // POST: api/Estudiantes/publico
-        [HttpPost("publico")]
-        [AllowAnonymous]
-        public async Task<ActionResult<Estudiante>> PostEstudiantePublico(Estudiante estudiante)
+
+        // GET: api/Estudiantes/todos
+        [HttpGet("todos")]
+        public async Task<ActionResult<IEnumerable<Estudiante>>> GetTodosEstudiantes()
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            var estudiantes = await _context.Estudiantes
+                .OrderBy(e => e.NombreCompleto)
+                .ToListAsync();
 
-            estudiante.Estado = "Activo";
-            estudiante.FechaRegistro = DateTime.Now;
-
-            _context.Estudiantes.Add(estudiante);
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                mensaje = "Estudiante registrado correctamente.",
-                estudianteId = estudiante.EstudianteId
-            });
+            return Ok(estudiantes);
         }
 
         // GET: api/Estudiantes/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Estudiante>> GetEstudiante(int id)
         {
-            var estudiante = await _context.Estudiantes
-                .Include(e => e.Encargados)
-                .Include(e => e.SolicitudesBeca)
-                .FirstOrDefaultAsync(e => e.EstudianteId == id);
+            var estudiante = await _context.Estudiantes.FindAsync(id);
 
             if (estudiante == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el estudiante solicitado."
-                });
-            }
+                return NotFound(new { mensaje = "Estudiante no encontrado." });
 
             return Ok(estudiante);
         }
@@ -77,15 +61,23 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<ActionResult<Estudiante>> PostEstudiante(Estudiante estudiante)
         {
             if (!ModelState.IsValid)
-            {
                 return BadRequest(ModelState);
-            }
 
             estudiante.Estado = "Activo";
             estudiante.FechaRegistro = DateTime.Now;
 
             _context.Estudiantes.Add(estudiante);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "Estudiantes",
+                descripcion: $"Se creó el estudiante '{estudiante.NombreCompleto}'.",
+                entidadAfectada: estudiante.NombreCompleto,
+                entidadId: estudiante.EstudianteId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return CreatedAtAction(
                 nameof(GetEstudiante),
@@ -94,28 +86,46 @@ namespace ASEDUPH_V2_API.Controllers
             );
         }
 
+        // POST: api/Estudiantes/publico (sin autenticación)
+        [HttpPost("publico")]
+        [AllowAnonymous]
+        public async Task<ActionResult> PostEstudiantePublico(Estudiante estudiante)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            estudiante.Estado = "Activo";
+            estudiante.FechaRegistro = DateTime.Now;
+
+            _context.Estudiantes.Add(estudiante);
+            await _context.SaveChangesAsync();
+
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "Estudiantes",
+                descripcion: $"Registro público: estudiante '{estudiante.NombreCompleto}' registrado desde formulario público.",
+                entidadAfectada: estudiante.NombreCompleto,
+                entidadId: estudiante.EstudianteId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new
+            {
+                mensaje = "Estudiante registrado correctamente.",
+                estudianteId = estudiante.EstudianteId
+            });
+        }
+
         // PUT: api/Estudiantes/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutEstudiante(int id, Estudiante estudiante)
         {
             if (id != estudiante.EstudianteId)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El ID enviado no coincide con el ID del estudiante."
-                });
-            }
+                return BadRequest(new { mensaje = "El ID no coincide." });
 
-            var estudianteExistente = await _context.Estudiantes
-                .FirstOrDefaultAsync(e => e.EstudianteId == id);
-
+            var estudianteExistente = await _context.Estudiantes.FindAsync(id);
             if (estudianteExistente == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el estudiante que desea actualizar."
-                });
-            }
+                return NotFound(new { mensaje = "Estudiante no encontrado." });
 
             estudianteExistente.NombreCompleto = estudiante.NombreCompleto;
             estudianteExistente.Sexo = estudiante.Sexo;
@@ -128,34 +138,42 @@ namespace ASEDUPH_V2_API.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Estudiante actualizado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Editar",
+                modulo: "Estudiantes",
+                descripcion: $"Se actualizó el estudiante '{estudianteExistente.NombreCompleto}'.",
+                entidadAfectada: estudianteExistente.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Estudiante actualizado correctamente." });
         }
 
         // DELETE: api/Estudiantes/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEstudiante(int id)
         {
-            var estudiante = await _context.Estudiantes
-                .FirstOrDefaultAsync(e => e.EstudianteId == id);
+            var estudiante = await _context.Estudiantes.FindAsync(id);
 
             if (estudiante == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el estudiante que desea eliminar."
-                });
-            }
+                return NotFound(new { mensaje = "Estudiante no encontrado." });
 
             estudiante.Estado = "Inactivo";
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Estudiante desactivado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Eliminar",
+                modulo: "Estudiantes",
+                descripcion: $"Se desactivó el estudiante '{estudiante.NombreCompleto}'.",
+                entidadAfectada: estudiante.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Estudiante desactivado correctamente." });
         }
     }
 }

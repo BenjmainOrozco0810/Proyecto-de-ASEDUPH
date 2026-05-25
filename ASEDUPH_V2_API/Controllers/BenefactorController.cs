@@ -1,5 +1,7 @@
-﻿using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using ASEDUPH_V2_API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,13 +9,16 @@ namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class BenefactoresController : ControllerBase
     {
         private readonly AseduphDbContext _context;
+        private readonly AuditoriaService _auditoria;
 
-        public BenefactoresController(AseduphDbContext context)
+        public BenefactoresController(AseduphDbContext context, AuditoriaService auditoria)
         {
             _context = context;
+            _auditoria = auditoria;
         }
 
         // GET: api/Benefactores
@@ -48,12 +53,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(b => b.BenefactorId == id);
 
             if (benefactor == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el benefactor solicitado."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el benefactor solicitado." });
 
             return Ok(benefactor);
         }
@@ -63,21 +63,27 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<ActionResult<Benefactor>> PostBenefactor(Benefactor benefactor)
         {
             if (!ModelState.IsValid)
-            {
                 return BadRequest(ModelState);
-            }
 
             var validacion = ValidarBenefactor(benefactor);
             if (validacion != null)
-            {
                 return BadRequest(validacion);
-            }
 
             benefactor.Estado = "Activo";
             benefactor.FechaRegistro = DateTime.Now;
 
             _context.Benefactores.Add(benefactor);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "Benefactores",
+                descripcion: $"Se creó el benefactor '{benefactor.NombreCompleto}' — Tipo: {benefactor.TipoBenefactor ?? "No especificado"}.",
+                entidadAfectada: benefactor.NombreCompleto,
+                entidadId: benefactor.BenefactorId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return CreatedAtAction(
                 nameof(GetBenefactor),
@@ -91,29 +97,17 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> PutBenefactor(int id, Benefactor benefactor)
         {
             if (id != benefactor.BenefactorId)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El ID enviado no coincide con el ID del benefactor."
-                });
-            }
+                return BadRequest(new { mensaje = "El ID enviado no coincide con el ID del benefactor." });
 
             var benefactorExistente = await _context.Benefactores
                 .FirstOrDefaultAsync(b => b.BenefactorId == id);
 
             if (benefactorExistente == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el benefactor que desea actualizar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el benefactor que desea actualizar." });
 
             var validacion = ValidarBenefactor(benefactor);
             if (validacion != null)
-            {
                 return BadRequest(validacion);
-            }
 
             benefactorExistente.NombreCompleto = benefactor.NombreCompleto;
             benefactorExistente.Telefono = benefactor.Telefono;
@@ -124,10 +118,17 @@ namespace ASEDUPH_V2_API.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Benefactor actualizado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Editar",
+                modulo: "Benefactores",
+                descripcion: $"Se actualizó el benefactor '{benefactorExistente.NombreCompleto}' — Estado: {benefactorExistente.Estado}.",
+                entidadAfectada: benefactorExistente.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Benefactor actualizado correctamente." });
         }
 
         // DELETE: api/Benefactores/5
@@ -138,20 +139,22 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(b => b.BenefactorId == id);
 
             if (benefactor == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el benefactor que desea desactivar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el benefactor que desea desactivar." });
 
             benefactor.Estado = "Inactivo";
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Benefactor desactivado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Eliminar",
+                modulo: "Benefactores",
+                descripcion: $"Se desactivó el benefactor '{benefactor.NombreCompleto}'.",
+                entidadAfectada: benefactor.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Benefactor desactivado correctamente." });
         }
 
         private object? ValidarBenefactor(Benefactor benefactor)

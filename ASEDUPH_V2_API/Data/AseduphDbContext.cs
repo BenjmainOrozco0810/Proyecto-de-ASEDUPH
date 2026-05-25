@@ -45,5 +45,6 @@ namespace ASEDUPH_V2_API.Data
         public DbSet<Usuario> Usuarios { get; set; }
         public DbSet<Rol> Roles { get; set; }
         public DbSet<UsuarioRol> UsuarioRoles { get; set; }
+        public DbSet<LogAuditoria> LogsAuditoria { get; set; }
     }
 }

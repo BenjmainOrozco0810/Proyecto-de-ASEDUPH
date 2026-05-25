@@ -1,4 +1,5 @@
 using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,10 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
 SqlConnection.ClearAllPools();
+
+builder.Services.AddScoped<AuditoriaService>();
 
 // ── Base de datos ─────────────────────────────────────────────────
 builder.Services.AddDbContext<AseduphDbContext>(options =>

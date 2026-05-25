@@ -1,5 +1,7 @@
-﻿using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using ASEDUPH_V2_API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,13 +9,16 @@ namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ListaCotejoEvaluacionController : ControllerBase
     {
         private readonly AseduphDbContext _context;
+        private readonly AuditoriaService _auditoria;
 
-        public ListaCotejoEvaluacionController(AseduphDbContext context)
+        public ListaCotejoEvaluacionController(AseduphDbContext context, AuditoriaService auditoria)
         {
             _context = context;
+            _auditoria = auditoria;
         }
 
         // GET: api/ListaCotejoEvaluacion
@@ -42,9 +47,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(l => l.ListaCotejoId == id);
 
             if (lista == null)
-            {
                 return NotFound(new { mensaje = "No se encontró el rubro de lista de cotejo solicitado." });
-            }
 
             return Ok(lista);
         }
@@ -57,9 +60,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .AnyAsync(e => e.EvaluacionBecaId == evaluacionBecaId);
 
             if (!existeEvaluacion)
-            {
                 return NotFound(new { mensaje = "No se encontró la evaluación de beca indicada." });
-            }
 
             var rubros = await _context.ListaCotejoEvaluacion
                 .Where(l => l.EvaluacionBecaId == evaluacionBecaId)
@@ -73,28 +74,34 @@ namespace ASEDUPH_V2_API.Controllers
         [HttpPost]
         public async Task<ActionResult<ListaCotejoEvaluacion>> PostListaCotejoEvaluacion(ListaCotejoEvaluacion lista)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var existeEvaluacion = await _context.EvaluacionesBeca
                 .AnyAsync(e => e.EvaluacionBecaId == lista.EvaluacionBecaId);
 
             if (!existeEvaluacion)
-            {
                 return BadRequest(new { mensaje = "La evaluación de beca indicada no existe." });
-            }
 
-            // Evitar rubros duplicados en la misma evaluación
             var rubroDuplicado = await _context.ListaCotejoEvaluacion
                 .AnyAsync(l => l.EvaluacionBecaId == lista.EvaluacionBecaId &&
                                l.Rubro == lista.Rubro);
 
             if (rubroDuplicado)
-            {
                 return BadRequest(new { mensaje = "Este rubro ya fue registrado para esta evaluación." });
-            }
 
             _context.ListaCotejoEvaluacion.Add(lista);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "ListaCotejoEvaluacion",
+                descripcion: $"Se agregó rubro '{lista.Rubro}' a la evaluación #{lista.EvaluacionBecaId} — Completado: {(lista.Completado ? "Sí" : "No")}.",
+                entidadAfectada: lista.Rubro,
+                entidadId: lista.ListaCotejoId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return CreatedAtAction(nameof(GetListaCotejoEvaluacion), new { id = lista.ListaCotejoId }, lista);
         }
@@ -104,16 +111,13 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> PutListaCotejoEvaluacion(int id, ListaCotejoEvaluacion lista)
         {
             if (id != lista.ListaCotejoId)
-            {
                 return BadRequest(new { mensaje = "El ID enviado no coincide con el ID del rubro." });
-            }
 
-            var existente = await _context.ListaCotejoEvaluacion.FirstOrDefaultAsync(l => l.ListaCotejoId == id);
+            var existente = await _context.ListaCotejoEvaluacion
+                .FirstOrDefaultAsync(l => l.ListaCotejoId == id);
 
             if (existente == null)
-            {
                 return NotFound(new { mensaje = "No se encontró el rubro de lista de cotejo que desea actualizar." });
-            }
 
             existente.EvaluacionBecaId = lista.EvaluacionBecaId;
             existente.Rubro = lista.Rubro;
@@ -122,6 +126,16 @@ namespace ASEDUPH_V2_API.Controllers
 
             await _context.SaveChangesAsync();
 
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Editar",
+                modulo: "ListaCotejoEvaluacion",
+                descripcion: $"Se actualizó rubro '{existente.Rubro}' de la evaluación #{existente.EvaluacionBecaId} — Completado: {(existente.Completado ? "Sí" : "No")}.",
+                entidadAfectada: existente.Rubro,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
             return Ok(new { mensaje = "Rubro de lista de cotejo actualizado correctamente." });
         }
 
@@ -129,15 +143,27 @@ namespace ASEDUPH_V2_API.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteListaCotejoEvaluacion(int id)
         {
-            var lista = await _context.ListaCotejoEvaluacion.FirstOrDefaultAsync(l => l.ListaCotejoId == id);
+            var lista = await _context.ListaCotejoEvaluacion
+                .FirstOrDefaultAsync(l => l.ListaCotejoId == id);
 
             if (lista == null)
-            {
                 return NotFound(new { mensaje = "No se encontró el rubro que desea eliminar." });
-            }
+
+            var rubro = lista.Rubro;
+            var evaluacionId = lista.EvaluacionBecaId;
 
             _context.ListaCotejoEvaluacion.Remove(lista);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Eliminar",
+                modulo: "ListaCotejoEvaluacion",
+                descripcion: $"Se eliminó rubro '{rubro}' de la evaluación #{evaluacionId}.",
+                entidadAfectada: rubro,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return Ok(new { mensaje = "Rubro de lista de cotejo eliminado correctamente." });
         }

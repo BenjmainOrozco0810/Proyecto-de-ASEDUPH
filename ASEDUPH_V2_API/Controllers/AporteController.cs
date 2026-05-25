@@ -1,5 +1,7 @@
-﻿using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using ASEDUPH_V2_API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,13 +9,16 @@ namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class AportesController : ControllerBase
     {
         private readonly AseduphDbContext _context;
+        private readonly AuditoriaService _auditoria;
 
-        public AportesController(AseduphDbContext context)
+        public AportesController(AseduphDbContext context, AuditoriaService auditoria)
         {
             _context = context;
+            _auditoria = auditoria;
         }
 
         // GET: api/Aportes
@@ -41,12 +46,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporte == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el aporte solicitado."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el aporte solicitado." });
 
             return Ok(aporte);
         }
@@ -59,12 +59,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .AnyAsync(b => b.BenefactorId == benefactorId);
 
             if (!existeBenefactor)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el benefactor indicado."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el benefactor indicado." });
 
             var aportes = await _context.Aportes
                 .Include(a => a.Beca)
@@ -84,12 +79,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .AnyAsync(b => b.BecaId == becaId);
 
             if (!existeBeca)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró la beca indicada."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró la beca indicada." });
 
             var aportes = await _context.Aportes
                 .Include(a => a.Benefactor)
@@ -107,12 +97,7 @@ namespace ASEDUPH_V2_API.Controllers
             [FromQuery] DateTime fin)
         {
             if (fin < inicio)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "La fecha de fin no puede ser menor a la fecha de inicio."
-                });
-            }
+                return BadRequest(new { mensaje = "La fecha de fin no puede ser menor a la fecha de inicio." });
 
             var aportes = await _context.Aportes
                 .Include(a => a.Benefactor)
@@ -130,20 +115,13 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<ActionResult<Aporte>> PostAporte(Aporte aporte)
         {
             if (!ModelState.IsValid)
-            {
                 return BadRequest(ModelState);
-            }
 
-            var existeBenefactor = await _context.Benefactores
-                .AnyAsync(b => b.BenefactorId == aporte.BenefactorId && b.Estado == "Activo");
+            var benefactor = await _context.Benefactores
+                .FirstOrDefaultAsync(b => b.BenefactorId == aporte.BenefactorId && b.Estado == "Activo");
 
-            if (!existeBenefactor)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El benefactor indicado no existe o está inactivo."
-                });
-            }
+            if (benefactor == null)
+                return BadRequest(new { mensaje = "El benefactor indicado no existe o está inactivo." });
 
             if (aporte.BecaId != null)
             {
@@ -151,22 +129,25 @@ namespace ASEDUPH_V2_API.Controllers
                     .AnyAsync(b => b.BecaId == aporte.BecaId);
 
                 if (!existeBeca)
-                {
-                    return BadRequest(new
-                    {
-                        mensaje = "La beca indicada no existe."
-                    });
-                }
+                    return BadRequest(new { mensaje = "La beca indicada no existe." });
             }
 
             var validacion = ValidarAporte(aporte);
             if (validacion != null)
-            {
                 return BadRequest(validacion);
-            }
 
             _context.Aportes.Add(aporte);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "Aportes",
+                descripcion: $"Se registró aporte de '{benefactor.NombreCompleto}' — Monto: Q{aporte.Monto:F2}, Tipo: {aporte.TipoAporte ?? "No especificado"}, Forma de pago: {aporte.FormaPago ?? "No especificada"}.",
+                entidadAfectada: benefactor.NombreCompleto,
+                entidadId: aporte.AporteId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return CreatedAtAction(
                 nameof(GetAporte),
@@ -180,40 +161,23 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> PutAporte(int id, Aporte aporte)
         {
             if (id != aporte.AporteId)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El ID enviado no coincide con el ID del aporte."
-                });
-            }
+                return BadRequest(new { mensaje = "El ID enviado no coincide con el ID del aporte." });
 
             var aporteExistente = await _context.Aportes
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporteExistente == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el aporte que desea actualizar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el aporte que desea actualizar." });
 
-            var existeBenefactor = await _context.Benefactores
-                .AnyAsync(b => b.BenefactorId == aporte.BenefactorId);
+            var benefactor = await _context.Benefactores
+                .FirstOrDefaultAsync(b => b.BenefactorId == aporte.BenefactorId);
 
-            if (!existeBenefactor)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El benefactor indicado no existe."
-                });
-            }
+            if (benefactor == null)
+                return BadRequest(new { mensaje = "El benefactor indicado no existe." });
 
             var validacion = ValidarAporte(aporte);
             if (validacion != null)
-            {
                 return BadRequest(validacion);
-            }
 
             aporteExistente.BenefactorId = aporte.BenefactorId;
             aporteExistente.BecaId = aporte.BecaId;
@@ -227,10 +191,17 @@ namespace ASEDUPH_V2_API.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Aporte actualizado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Editar",
+                modulo: "Aportes",
+                descripcion: $"Se actualizó aporte de '{benefactor.NombreCompleto}' — Monto: Q{aporteExistente.Monto:F2}.",
+                entidadAfectada: benefactor.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Aporte actualizado correctamente." });
         }
 
         // DELETE: api/Aportes/5
@@ -238,31 +209,35 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> DeleteAporte(int id)
         {
             var aporte = await _context.Aportes
+                .Include(a => a.Benefactor)
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporte == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró el aporte que desea eliminar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró el aporte que desea eliminar." });
+
+            var nombreBenefactor = aporte.Benefactor?.NombreCompleto ?? "Desconocido";
+            var monto = aporte.Monto;
 
             _context.Aportes.Remove(aporte);
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Aporte eliminado correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Eliminar",
+                modulo: "Aportes",
+                descripcion: $"Se eliminó aporte de '{nombreBenefactor}' — Monto: Q{monto:F2}.",
+                entidadAfectada: nombreBenefactor,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Aporte eliminado correctamente." });
         }
 
         private object? ValidarAporte(Aporte aporte)
         {
             if (aporte.Monto <= 0)
-            {
                 return new { mensaje = "El monto del aporte debe ser mayor a 0." };
-            }
 
             var tiposValidos = new List<string>
             {
@@ -271,12 +246,7 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.TipoAporte) &&
                 !tiposValidos.Contains(aporte.TipoAporte))
-            {
-                return new
-                {
-                    mensaje = "Tipo de aporte no válido. Use: Económico, Útiles, Uniformes, Zapatos, Alimentos u Otro."
-                };
-            }
+                return new { mensaje = "Tipo de aporte no válido. Use: Económico, Útiles, Uniformes, Zapatos, Alimentos u Otro." };
 
             var formasPagoValidas = new List<string>
             {
@@ -285,12 +255,7 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.FormaPago) &&
                 !formasPagoValidas.Contains(aporte.FormaPago))
-            {
-                return new
-                {
-                    mensaje = "Forma de pago no válida. Use: Efectivo, Transferencia, Depósito, Cheque u Otro."
-                };
-            }
+                return new { mensaje = "Forma de pago no válida. Use: Efectivo, Transferencia, Depósito, Cheque u Otro." };
 
             var periodosValidos = new List<string>
             {
@@ -299,12 +264,7 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.Periodo) &&
                 !periodosValidos.Contains(aporte.Periodo))
-            {
-                return new
-                {
-                    mensaje = "Período no válido. Use: Mensual, Semestral, Anual, Único u Otro."
-                };
-            }
+                return new { mensaje = "Período no válido. Use: Mensual, Semestral, Anual, Único u Otro." };
 
             return null;
         }

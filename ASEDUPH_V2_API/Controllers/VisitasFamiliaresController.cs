@@ -1,5 +1,7 @@
-﻿using ASEDUPH_V2_API.Data;
+using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
+using ASEDUPH_V2_API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,13 +9,16 @@ namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class VisitasFamiliaresController : ControllerBase
     {
         private readonly AseduphDbContext _context;
+        private readonly AuditoriaService _auditoria;
 
-        public VisitasFamiliaresController(AseduphDbContext context)
+        public VisitasFamiliaresController(AseduphDbContext context, AuditoriaService auditoria)
         {
             _context = context;
+            _auditoria = auditoria;
         }
 
         // GET: api/VisitasFamiliares
@@ -39,12 +44,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(v => v.VisitaFamiliarId == id);
 
             if (visita == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró la visita familiar solicitada."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró la visita familiar solicitada." });
 
             return Ok(visita);
         }
@@ -59,12 +59,7 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(v => v.SolicitudBecaId == solicitudBecaId);
 
             if (visita == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró visita familiar para esta solicitud."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró visita familiar para esta solicitud." });
 
             return Ok(visita);
         }
@@ -74,34 +69,33 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<ActionResult<VisitaFamiliar>> PostVisitaFamiliar(VisitaFamiliar visita)
         {
             if (!ModelState.IsValid)
-            {
                 return BadRequest(ModelState);
-            }
 
-            var existeSolicitud = await _context.SolicitudesBeca
-                .AnyAsync(s => s.SolicitudBecaId == visita.SolicitudBecaId);
+            var solicitud = await _context.SolicitudesBeca
+                .Include(s => s.Estudiante)
+                .FirstOrDefaultAsync(s => s.SolicitudBecaId == visita.SolicitudBecaId);
 
-            if (!existeSolicitud)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "La solicitud de beca indicada no existe."
-                });
-            }
+            if (solicitud == null)
+                return BadRequest(new { mensaje = "La solicitud de beca indicada no existe." });
 
             var yaTieneVisita = await _context.VisitasFamiliares
                 .AnyAsync(v => v.SolicitudBecaId == visita.SolicitudBecaId);
 
             if (yaTieneVisita)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "Esta solicitud ya tiene una visita familiar registrada."
-                });
-            }
+                return BadRequest(new { mensaje = "Esta solicitud ya tiene una visita familiar registrada." });
 
             _context.VisitasFamiliares.Add(visita);
             await _context.SaveChangesAsync();
+
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Crear",
+                modulo: "VisitasFamiliares",
+                descripcion: $"Se registró visita familiar para '{solicitud.Estudiante?.NombreCompleto}' — Tipo: {visita.TipoVisita ?? "No especificado"}, Realizada por: {visita.RealizadaPor ?? "No especificado"}.",
+                entidadAfectada: solicitud.Estudiante?.NombreCompleto,
+                entidadId: visita.VisitaFamiliarId,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
 
             return CreatedAtAction(
                 nameof(GetVisitaFamiliar),
@@ -115,47 +109,27 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> PutVisitaFamiliar(int id, VisitaFamiliar visita)
         {
             if (id != visita.VisitaFamiliarId)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "El ID enviado no coincide con el ID de la visita familiar."
-                });
-            }
+                return BadRequest(new { mensaje = "El ID enviado no coincide con el ID de la visita familiar." });
 
             var visitaExistente = await _context.VisitasFamiliares
                 .FirstOrDefaultAsync(v => v.VisitaFamiliarId == id);
 
             if (visitaExistente == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró la visita familiar que desea actualizar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró la visita familiar que desea actualizar." });
 
-            var existeSolicitud = await _context.SolicitudesBeca
-                .AnyAsync(s => s.SolicitudBecaId == visita.SolicitudBecaId);
+            var solicitud = await _context.SolicitudesBeca
+                .Include(s => s.Estudiante)
+                .FirstOrDefaultAsync(s => s.SolicitudBecaId == visita.SolicitudBecaId);
 
-            if (!existeSolicitud)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "La solicitud de beca indicada no existe."
-                });
-            }
+            if (solicitud == null)
+                return BadRequest(new { mensaje = "La solicitud de beca indicada no existe." });
 
             var visitaDuplicada = await _context.VisitasFamiliares
-                .AnyAsync(v =>
-                    v.SolicitudBecaId == visita.SolicitudBecaId &&
-                    v.VisitaFamiliarId != id);
+                .AnyAsync(v => v.SolicitudBecaId == visita.SolicitudBecaId &&
+                               v.VisitaFamiliarId != id);
 
             if (visitaDuplicada)
-            {
-                return BadRequest(new
-                {
-                    mensaje = "Ya existe otra visita familiar registrada para esta solicitud."
-                });
-            }
+                return BadRequest(new { mensaje = "Ya existe otra visita familiar registrada para esta solicitud." });
 
             visitaExistente.SolicitudBecaId = visita.SolicitudBecaId;
             visitaExistente.TipoVisita = visita.TipoVisita;
@@ -173,10 +147,17 @@ namespace ASEDUPH_V2_API.Controllers
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Visita familiar actualizada correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Editar",
+                modulo: "VisitasFamiliares",
+                descripcion: $"Se actualizó visita familiar de '{solicitud.Estudiante?.NombreCompleto}' — Tipo: {visitaExistente.TipoVisita ?? "No especificado"}.",
+                entidadAfectada: solicitud.Estudiante?.NombreCompleto,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Visita familiar actualizada correctamente." });
         }
 
         // DELETE: api/VisitasFamiliares/5
@@ -184,23 +165,29 @@ namespace ASEDUPH_V2_API.Controllers
         public async Task<IActionResult> DeleteVisitaFamiliar(int id)
         {
             var visita = await _context.VisitasFamiliares
+                .Include(v => v.SolicitudBeca)
+                    .ThenInclude(s => s.Estudiante)
                 .FirstOrDefaultAsync(v => v.VisitaFamiliarId == id);
 
             if (visita == null)
-            {
-                return NotFound(new
-                {
-                    mensaje = "No se encontró la visita familiar que desea eliminar."
-                });
-            }
+                return NotFound(new { mensaje = "No se encontró la visita familiar que desea eliminar." });
+
+            var nombreEstudiante = visita.SolicitudBeca?.Estudiante?.NombreCompleto ?? "Desconocido";
 
             _context.VisitasFamiliares.Remove(visita);
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                mensaje = "Visita familiar eliminada correctamente."
-            });
+            // ── Log de auditoría ──────────────────────────────────────────
+            await _auditoria.RegistrarAsync(
+                accion: "Eliminar",
+                modulo: "VisitasFamiliares",
+                descripcion: $"Se eliminó visita familiar de '{nombreEstudiante}'.",
+                entidadAfectada: nombreEstudiante,
+                entidadId: id,
+                ip: HttpContext.Connection.RemoteIpAddress?.ToString()
+            );
+
+            return Ok(new { mensaje = "Visita familiar eliminada correctamente." });
         }
     }
 }
