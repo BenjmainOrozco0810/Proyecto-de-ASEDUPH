@@ -14,6 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 SqlConnection.ClearAllPools();
 
 builder.Services.AddScoped<AuditoriaService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<AuditoriaService>();
 
 // ── Base de datos ─────────────────────────────────────────────────
 builder.Services.AddDbContext<AseduphDbContext>(options =>

@@ -165,6 +165,25 @@ namespace ASEDUPH_V2_API.Controllers
             if (estudiante == null)
                 return BadRequest(new { mensaje = "El estudiante indicado no existe." });
 
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var estudiante1 = await _context.Estudiantes
+                .FirstOrDefaultAsync(e1 => e1.EstudianteId == beca.EstudianteId && e1.Estado == "Activo");
+
+            if (estudiante == null)
+                return BadRequest(new { mensaje = "El estudiante indicado no existe o está inactivo." });
+
+            // ── Validación: no crear segunda beca activa ──────────────────
+            var tieneBecaActiva = await _context.Becas
+                .AnyAsync(b => b.EstudianteId == beca.EstudianteId && b.EstadoBeca == "Activa");
+
+            if (tieneBecaActiva)
+                return BadRequest(new
+                {
+                    mensaje = "Este estudiante ya tiene una beca activa. No se puede asignar una segunda beca activa al mismo estudiante."
+                });
+
             var validacion = ValidarBeca(beca);
             if (validacion != null)
                 return BadRequest(validacion);

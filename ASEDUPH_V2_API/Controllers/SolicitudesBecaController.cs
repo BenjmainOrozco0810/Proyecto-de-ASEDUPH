@@ -36,6 +36,29 @@ namespace ASEDUPH_V2_API.Controllers
             return Ok(solicitudes);
         }
 
+        // GET: api/SolicitudesBeca/aprobadas-sin-beca
+        // Devuelve las solicitudes Aprobadas que aún NO tienen una beca asignada
+        [HttpGet("aprobadas-sin-beca")]
+        [Authorize]
+        public async Task<ActionResult<IEnumerable<SolicitudBeca>>> GetAprobadasSinBeca()
+        {
+            // IDs de solicitudes que ya tienen una beca asociada
+            var idsConBeca = await _context.Becas
+                .Where(b => b.SolicitudBecaId != null)
+                .Select(b => b.SolicitudBecaId!.Value)
+                .ToListAsync();
+
+            var solicitudes = await _context.SolicitudesBeca
+                .Include(s => s.Estudiante)
+                .Include(s => s.CentroEducativo)
+                .Where(s => s.EstadoSolicitud == "Aprobada"
+                         && !idsConBeca.Contains(s.SolicitudBecaId))
+                .OrderByDescending(s => s.FechaSolicitud)
+                .ToListAsync();
+
+            return Ok(solicitudes);
+        }
+
         // GET: api/SolicitudesBeca/5
         [HttpGet("{id}")]
         [Authorize]
@@ -236,13 +259,26 @@ namespace ASEDUPH_V2_API.Controllers
             };
 
             if (!estadosValidos.Contains(nuevoEstado))
-                return BadRequest(new { mensaje = "Estado no válido. Use: Pendiente, En Evaluación, Aprobada, Rechazada o Cancelada." });
+                return BadRequest(new { mensaje = "Estado no válido." });
+
+            // ── Validación por EstudianteId ───────────────────────────────
+            if (nuevoEstado == "Rechazada" || nuevoEstado == "Cancelada")
+            {
+                var tieneBecaActiva = await _context.Becas
+                    .AnyAsync(b => b.EstudianteId == solicitud.EstudianteId
+                                && b.EstadoBeca == "Activa");
+
+                if (tieneBecaActiva)
+                    return BadRequest(new
+                    {
+                        mensaje = "No se puede rechazar o cancelar una solicitud cuyo estudiante tiene una beca activa. Primero cancele o finalice la beca."
+                    });
+            }
 
             var estadoAnterior = solicitud.EstadoSolicitud;
             solicitud.EstadoSolicitud = nuevoEstado;
             await _context.SaveChangesAsync();
 
-            // ── Log de auditoría ──────────────────────────────────────────
             await _auditoria.RegistrarAsync(
                 accion: "CambiarEstado",
                 modulo: "Solicitudes",

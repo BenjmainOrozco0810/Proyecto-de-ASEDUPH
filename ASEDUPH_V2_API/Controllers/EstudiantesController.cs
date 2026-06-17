@@ -160,10 +160,31 @@ namespace ASEDUPH_V2_API.Controllers
             if (estudiante == null)
                 return NotFound(new { mensaje = "Estudiante no encontrado." });
 
+            // ── Validación: no desactivar si tiene beca activa ────────────
+            var tieneBecaActiva = await _context.Becas
+                .AnyAsync(b => b.EstudianteId == id && b.EstadoBeca == "Activa");
+
+            if (tieneBecaActiva)
+                return BadRequest(new
+                {
+                    mensaje = "No se puede desactivar un estudiante que tiene una beca activa. Primero cancele o finalice la beca."
+                });
+
+            // ── Validación: no desactivar si tiene solicitudes pendientes ──
+            var tieneSolicitudPendiente = await _context.SolicitudesBeca
+                .AnyAsync(s => s.EstudianteId == id &&
+                          (s.EstadoSolicitud == "Pendiente" ||
+                           s.EstadoSolicitud == "En Evaluación"));
+
+            if (tieneSolicitudPendiente)
+                return BadRequest(new
+                {
+                    mensaje = "No se puede desactivar un estudiante con solicitudes pendientes o en evaluación."
+                });
+
             estudiante.Estado = "Inactivo";
             await _context.SaveChangesAsync();
 
-            // ── Log de auditoría ──────────────────────────────────────────
             await _auditoria.RegistrarAsync(
                 accion: "Eliminar",
                 modulo: "Estudiantes",
