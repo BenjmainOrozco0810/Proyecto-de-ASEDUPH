@@ -1,4 +1,4 @@
-using ASEDUPH_V2_API.Data;
+﻿using ASEDUPH_V2_API.Data;
 using ASEDUPH_V2_API.Models;
 using ASEDUPH_V2_API.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +9,6 @@ namespace ASEDUPH_V2_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
     public class AportesController : ControllerBase
     {
         private readonly AseduphDbContext _context;
@@ -46,7 +45,12 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporte == null)
-                return NotFound(new { mensaje = "No se encontró el aporte solicitado." });
+            {
+                return NotFound(new
+                {
+                    mensaje = "No se encontró el aporte solicitado."
+                });
+            }
 
             return Ok(aporte);
         }
@@ -59,7 +63,12 @@ namespace ASEDUPH_V2_API.Controllers
                 .AnyAsync(b => b.BenefactorId == benefactorId);
 
             if (!existeBenefactor)
-                return NotFound(new { mensaje = "No se encontró el benefactor indicado." });
+            {
+                return NotFound(new
+                {
+                    mensaje = "No se encontró el benefactor indicado."
+                });
+            }
 
             var aportes = await _context.Aportes
                 .Include(a => a.Beca)
@@ -79,7 +88,12 @@ namespace ASEDUPH_V2_API.Controllers
                 .AnyAsync(b => b.BecaId == becaId);
 
             if (!existeBeca)
-                return NotFound(new { mensaje = "No se encontró la beca indicada." });
+            {
+                return NotFound(new
+                {
+                    mensaje = "No se encontró la beca indicada."
+                });
+            }
 
             var aportes = await _context.Aportes
                 .Include(a => a.Benefactor)
@@ -97,7 +111,12 @@ namespace ASEDUPH_V2_API.Controllers
             [FromQuery] DateTime fin)
         {
             if (fin < inicio)
-                return BadRequest(new { mensaje = "La fecha de fin no puede ser menor a la fecha de inicio." });
+            {
+                return BadRequest(new
+                {
+                    mensaje = "La fecha de fin no puede ser menor a la fecha de inicio."
+                });
+            }
 
             var aportes = await _context.Aportes
                 .Include(a => a.Benefactor)
@@ -112,16 +131,24 @@ namespace ASEDUPH_V2_API.Controllers
 
         // POST: api/Aportes
         [HttpPost]
+        [Authorize]
         public async Task<ActionResult<Aporte>> PostAporte(Aporte aporte)
         {
             if (!ModelState.IsValid)
+            {
                 return BadRequest(ModelState);
+            }
 
             var benefactor = await _context.Benefactores
                 .FirstOrDefaultAsync(b => b.BenefactorId == aporte.BenefactorId && b.Estado == "Activo");
 
             if (benefactor == null)
-                return BadRequest(new { mensaje = "El benefactor indicado no existe o está inactivo." });
+            {
+                return BadRequest(new
+                {
+                    mensaje = "El benefactor indicado no existe o está inactivo."
+                });
+            }
 
             if (aporte.BecaId != null)
             {
@@ -129,12 +156,22 @@ namespace ASEDUPH_V2_API.Controllers
                     .AnyAsync(b => b.BecaId == aporte.BecaId);
 
                 if (!existeBeca)
-                    return BadRequest(new { mensaje = "La beca indicada no existe." });
+                {
+                    return BadRequest(new
+                    {
+                        mensaje = "La beca indicada no existe."
+                    });
+                }
             }
 
             var validacion = ValidarAporte(aporte);
             if (validacion != null)
+            {
                 return BadRequest(validacion);
+            }
+
+            // ── Generar número de comprobante automático (YYYYMMDD-NNN) ──
+            aporte.NumeroComprobante = await GenerarNumeroComprobante();
 
             _context.Aportes.Add(aporte);
             await _context.SaveChangesAsync();
@@ -143,7 +180,7 @@ namespace ASEDUPH_V2_API.Controllers
             await _auditoria.RegistrarAsync(
                 accion: "Crear",
                 modulo: "Aportes",
-                descripcion: $"Se registró aporte de '{benefactor.NombreCompleto}' — Monto: Q{aporte.Monto:F2}, Tipo: {aporte.TipoAporte ?? "No especificado"}, Forma de pago: {aporte.FormaPago ?? "No especificada"}.",
+                descripcion: $"Se registró aporte de Q{aporte.Monto:F2} del benefactor '{benefactor.NombreCompleto}' (comprobante {aporte.NumeroComprobante}).",
                 entidadAfectada: benefactor.NombreCompleto,
                 entidadId: aporte.AporteId,
                 ip: HttpContext.Connection.RemoteIpAddress?.ToString()
@@ -158,26 +195,44 @@ namespace ASEDUPH_V2_API.Controllers
 
         // PUT: api/Aportes/5
         [HttpPut("{id}")]
+        [Authorize]
         public async Task<IActionResult> PutAporte(int id, Aporte aporte)
         {
             if (id != aporte.AporteId)
-                return BadRequest(new { mensaje = "El ID enviado no coincide con el ID del aporte." });
+            {
+                return BadRequest(new
+                {
+                    mensaje = "El ID enviado no coincide con el ID del aporte."
+                });
+            }
 
             var aporteExistente = await _context.Aportes
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporteExistente == null)
-                return NotFound(new { mensaje = "No se encontró el aporte que desea actualizar." });
+            {
+                return NotFound(new
+                {
+                    mensaje = "No se encontró el aporte que desea actualizar."
+                });
+            }
 
             var benefactor = await _context.Benefactores
                 .FirstOrDefaultAsync(b => b.BenefactorId == aporte.BenefactorId);
 
             if (benefactor == null)
-                return BadRequest(new { mensaje = "El benefactor indicado no existe." });
+            {
+                return BadRequest(new
+                {
+                    mensaje = "El benefactor indicado no existe."
+                });
+            }
 
             var validacion = ValidarAporte(aporte);
             if (validacion != null)
+            {
                 return BadRequest(validacion);
+            }
 
             aporteExistente.BenefactorId = aporte.BenefactorId;
             aporteExistente.BecaId = aporte.BecaId;
@@ -186,7 +241,7 @@ namespace ASEDUPH_V2_API.Controllers
             aporteExistente.TipoAporte = aporte.TipoAporte;
             aporteExistente.FormaPago = aporte.FormaPago;
             aporteExistente.Periodo = aporte.Periodo;
-            aporteExistente.NumeroComprobante = aporte.NumeroComprobante;
+            // El número de comprobante NO se modifica al editar (se conserva el original)
             aporteExistente.Observaciones = aporte.Observaciones;
 
             await _context.SaveChangesAsync();
@@ -195,17 +250,21 @@ namespace ASEDUPH_V2_API.Controllers
             await _auditoria.RegistrarAsync(
                 accion: "Editar",
                 modulo: "Aportes",
-                descripcion: $"Se actualizó aporte de '{benefactor.NombreCompleto}' — Monto: Q{aporteExistente.Monto:F2}.",
+                descripcion: $"Se actualizó el aporte de Q{aporteExistente.Monto:F2} del benefactor '{benefactor.NombreCompleto}' (comprobante {aporteExistente.NumeroComprobante}).",
                 entidadAfectada: benefactor.NombreCompleto,
                 entidadId: id,
                 ip: HttpContext.Connection.RemoteIpAddress?.ToString()
             );
 
-            return Ok(new { mensaje = "Aporte actualizado correctamente." });
+            return Ok(new
+            {
+                mensaje = "Aporte actualizado correctamente."
+            });
         }
 
         // DELETE: api/Aportes/5
         [HttpDelete("{id}")]
+        [Authorize]
         public async Task<IActionResult> DeleteAporte(int id)
         {
             var aporte = await _context.Aportes
@@ -213,9 +272,15 @@ namespace ASEDUPH_V2_API.Controllers
                 .FirstOrDefaultAsync(a => a.AporteId == id);
 
             if (aporte == null)
-                return NotFound(new { mensaje = "No se encontró el aporte que desea eliminar." });
+            {
+                return NotFound(new
+                {
+                    mensaje = "No se encontró el aporte que desea eliminar."
+                });
+            }
 
             var nombreBenefactor = aporte.Benefactor?.NombreCompleto ?? "Desconocido";
+            var comprobante = aporte.NumeroComprobante ?? "--";
             var monto = aporte.Monto;
 
             _context.Aportes.Remove(aporte);
@@ -225,19 +290,41 @@ namespace ASEDUPH_V2_API.Controllers
             await _auditoria.RegistrarAsync(
                 accion: "Eliminar",
                 modulo: "Aportes",
-                descripcion: $"Se eliminó aporte de '{nombreBenefactor}' — Monto: Q{monto:F2}.",
+                descripcion: $"Se eliminó el aporte de Q{monto:F2} del benefactor '{nombreBenefactor}' (comprobante {comprobante}).",
                 entidadAfectada: nombreBenefactor,
                 entidadId: id,
                 ip: HttpContext.Connection.RemoteIpAddress?.ToString()
             );
 
-            return Ok(new { mensaje = "Aporte eliminado correctamente." });
+            return Ok(new
+            {
+                mensaje = "Aporte eliminado correctamente."
+            });
+        }
+
+        // ── Genera un número de comprobante con formato YYYYMMDD-NNN ──
+        // El correlativo (NNN) se reinicia cada día.
+        private async Task<string> GenerarNumeroComprobante()
+        {
+            var hoy = DateTime.Now;
+            var prefijo = hoy.ToString("yyyyMMdd"); // Ej: 20260617
+
+            // Contar cuántos comprobantes ya existen con el prefijo de hoy
+            var cantidadHoy = await _context.Aportes
+                .CountAsync(a => a.NumeroComprobante != null
+                              && a.NumeroComprobante.StartsWith(prefijo));
+
+            var correlativo = (cantidadHoy + 1).ToString("D3"); // 001, 002, ...
+
+            return $"{prefijo}-{correlativo}";
         }
 
         private object? ValidarAporte(Aporte aporte)
         {
             if (aporte.Monto <= 0)
+            {
                 return new { mensaje = "El monto del aporte debe ser mayor a 0." };
+            }
 
             var tiposValidos = new List<string>
             {
@@ -246,7 +333,12 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.TipoAporte) &&
                 !tiposValidos.Contains(aporte.TipoAporte))
-                return new { mensaje = "Tipo de aporte no válido. Use: Económico, Útiles, Uniformes, Zapatos, Alimentos u Otro." };
+            {
+                return new
+                {
+                    mensaje = "Tipo de aporte no válido. Use: Económico, Útiles, Uniformes, Zapatos, Alimentos u Otro."
+                };
+            }
 
             var formasPagoValidas = new List<string>
             {
@@ -255,7 +347,12 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.FormaPago) &&
                 !formasPagoValidas.Contains(aporte.FormaPago))
-                return new { mensaje = "Forma de pago no válida. Use: Efectivo, Transferencia, Depósito, Cheque u Otro." };
+            {
+                return new
+                {
+                    mensaje = "Forma de pago no válida. Use: Efectivo, Transferencia, Depósito, Cheque u Otro."
+                };
+            }
 
             var periodosValidos = new List<string>
             {
@@ -264,7 +361,12 @@ namespace ASEDUPH_V2_API.Controllers
 
             if (!string.IsNullOrWhiteSpace(aporte.Periodo) &&
                 !periodosValidos.Contains(aporte.Periodo))
-                return new { mensaje = "Período no válido. Use: Mensual, Semestral, Anual, Único u Otro." };
+            {
+                return new
+                {
+                    mensaje = "Período no válido. Use: Mensual, Semestral, Anual, Único u Otro."
+                };
+            }
 
             return null;
         }
