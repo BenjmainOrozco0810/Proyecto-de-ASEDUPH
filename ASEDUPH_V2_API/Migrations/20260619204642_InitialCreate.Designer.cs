@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ASEDUPH_V2_API.Migrations
 {
     [DbContext(typeof(AseduphDbContext))]
-    [Migration("20260619050538_SyncModelAzure")]
-    partial class SyncModelAzure
+    [Migration("20260619204642_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
