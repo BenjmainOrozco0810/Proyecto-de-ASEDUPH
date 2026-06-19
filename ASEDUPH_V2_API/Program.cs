@@ -10,12 +10,10 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
 SqlConnection.ClearAllPools();
 
 builder.Services.AddScoped<AuditoriaService>();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<AuditoriaService>();
 
 // ── Base de datos ─────────────────────────────────────────────────
 builder.Services.AddDbContext<AseduphDbContext>(options =>
@@ -54,16 +52,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
 // ── CORS ─────────────────────────────────────────────────────────
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PermitirFrontend", policy =>
     {
         policy.WithOrigins(
-                "https://localhost:5269",
-                "http://localhost:5269",
-                 "https://localhost:7194",
-                "http://localhost:7194"
+                "https://jolly-island-06232720f.7.azurestaticapps.net",  
+                "https://localhost:7138",                   
+                "https://localhost:5269",                   
+                "http://localhost:5269"
               )
               .AllowAnyHeader()
               .AllowAnyMethod();
@@ -130,9 +129,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("PermitirFrontend");
-app.UseAuthentication();
-app.UseAuthorization();
-
 app.UseAuthentication();
 app.UseAuthorization();
 
